@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>2025 Master Analytics</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 p-6">
+    <h1 class="text-3xl font-black mb-6 text-blue-400">2025 REEFSCAPE 數據分析中心</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 掃描區 -->
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700">
+            <h2 class="text-xl font-bold mb-4">數據採集 (Camera)</h2>
+            <div id="reader" class="rounded-lg overflow-hidden"></div>
+        </div>
+
+        <!-- 圖表分析 -->
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 lg:col-span-2">
+            <h2 class="text-xl font-bold mb-4">隊伍得分能力對比 (Average Score)</h2>
+            <canvas id="scoreChart" height="150"></canvas>
+        </div>
+    </div>
+
+    <!-- 數據表 -->
+    <div class="mt-8 bg-gray-800 p-4 rounded-xl border border-gray-700 overflow-x-auto">
+        <h2 class="text-xl font-bold mb-4">詳細排行</h2>
+        <table class="w-full text-left">
+            <thead>
+                <tr class="text-blue-400 border-b border-gray-700">
+                    <th class="p-3">隊號</th>
+                    <th class="p-3">場次數</th>
+                    <th class="p-3">場均 Coral (L2-L4)</th>
+                    <th class="p-3">場均 Algae</th>
+                    <th class="p-3">攀爬成功率</th>
+                </tr>
+            </thead>
+            <tbody id="stats-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let rawData = [];
+        let chartInstance = null;
+
+        function onScanSuccess(text) {
+            const parts = text.split('|');
+            if(parts.length < 10) return;
+
+            const entry = {
+                team: parts[0], match: parts[1], autoL: +parts[2], autoC: +parts[3],
+                l4: +parts[4], l3: +parts[5], l2: +parts[6], l1: +parts[7],
+                algae: +parts[8], endgame: +parts[9]
+            };
+
+            // 避免同場次重複
+            if(!rawData.some(d => d.team === entry.team && d.match === entry.match)) {
+                rawData.push(entry);
+                processData();
+                alert(`已接收隊伍 ${entry.team} 場次 ${entry.match}`);
+            }
+        }
+
+        function processData() {
+            const teams = [...new Set(rawData.map(d => d.team))];
+            const stats = teams.map(t => {
+                const tData = rawData.filter(d => d.team === t);
+                const avgHighCoral = tData.reduce((s, d) => s + d.l4 + d.l3 + d.l2, 0) / tData.length;
+                const avgAlgae = tData.reduce((s, d) => s + d.algae, 0) / tData.length;
+                const climbRate = (tData.filter(d => d.endgame >= 6).length / tData.length * 100).toFixed(0);
+                return { team: t, avgHighCoral, avgAlgae, climbRate, count: tData.length };
+            });
+
+            updateTable(stats);
+            updateChart(stats);
+        }
+
+        function updateTable(stats) {
+            document.getElementById('stats-body').innerHTML = stats.map(s => `
+                <tr class="border-b border-gray-700 hover:bg-gray-750">
+                    <td class="p-3 font-bold">${s.team}</td>
+                    <td class="p-3">${s.count}</td>
+                    <td class="p-3 text-green-400">${s.avgHighCoral.toFixed(1)}</td>
+                    <td class="p-3 text-yellow-400">${s.avgAlgae.toFixed(1)}</td>
+                    <td class="p-3">${s.climbRate}%</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateChart(stats) {
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+            if(chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: stats.map(s => s.team),
+                    datasets: [{
+                        label: '場均高層 Coral 得分',
+                        data: stats.map(s => s.avgHighCoral),
+                        backgroundColor: '#3b82f6'
+                    }]
+                },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        scanner.render(onScanSuccess);
+    </script>
+</body>
+</html>
